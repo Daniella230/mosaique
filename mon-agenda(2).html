@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mosaïque — mon agenda</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root {
+  --bg: #171326;
+  --surface: #221D38;
+  --surface-2: #2B2547;
+  --border: #3A3260;
+  --ink: #F5F1EA;
+  --ink-soft: #B7ADD6;
+  --ink-faint: #877EA8;
+  --danger-bg: #4A2030; --danger-fg: #FF9EB8;
+  --warn-bg: #4A3A18; --warn-fg: #F2C572;
+  --success-bg: #17402E; --success-fg: #7FE3B4;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Inter', -apple-system, "Segoe UI", Roboto, sans-serif; }
+h1, .brand, .block-name, .panel-title, .activity-title, .day-panel-title { font-family: 'Space Grotesk', sans-serif; }
+
+button { font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 9px 16px; cursor: pointer; transition: border-color .15s ease, transform .1s ease; }
+button:hover { border-color: var(--ink-faint); }
+button.primary { background: linear-gradient(135deg, #8B5CF6, #3E8EF7); color: #fff; border: none; font-weight: 600; }
+button.active { border-color: var(--ink); background: var(--surface-2); font-weight: 600; }
+button:disabled { opacity: 0.6; cursor: default; }
+
+input, select { font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink); width: 100%; }
+input::placeholder { color: var(--ink-faint); }
+
+.app-shell { max-width: 760px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+.app-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 1.75rem; }
+.brand-row { display: flex; align-items: center; gap: 10px; }
+.brand { font-size: 26px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+.brand-tiles { display: grid; grid-template-columns: repeat(2, 9px); grid-template-rows: repeat(2, 9px); gap: 3px; }
+.brand-tiles span { border-radius: 2px; }
+.account-chip { font-size: 12px; color: var(--ink-soft); }
+
+.login-screen { max-width: 420px; margin: 18vh auto; text-align: center; padding: 0 1rem; }
+.login-screen p { color: var(--ink-soft); }
+.status-message { max-width: 420px; margin: 20vh auto; text-align: center; color: var(--ink-soft); }
+.status-message.error { color: var(--danger-fg); }
+
+.nav-row { display: flex; gap: 8px; margin-bottom: 1.5rem; }
+.row-end { display: flex; justify-content: flex-end; margin-bottom: 0.75rem; }
+.row-gap { display: flex; gap: 8px; margin-top: 4px; }
+.row-gap-sm { display: flex; align-items: center; gap: 8px; }
+
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.1rem 1.25rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 8px; }
+.panel-title { font-weight: 600; margin: 0 0 4px; font-size: 16px; }
+.field-error { color: var(--danger-fg); font-size: 13px; margin: 0; }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.block-card { cursor: pointer; position: relative; border-radius: 16px; padding: 1.15rem 1.3rem; border: none; transition: transform .15s ease, box-shadow .15s ease; box-shadow: 0 6px 16px -8px rgba(0,0,0,0.5); }
+.block-card:hover { transform: translateY(-3px); box-shadow: 0 12px 24px -10px rgba(0,0,0,0.6); }
+.block-name { font-weight: 600; font-size: 16px; margin: 0; }
+.block-sub { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
+.block-count { font-size: 13px; opacity: 0.85; margin: 10px 0 0; }
+.block-next { font-size: 13px; margin: 3px 0 0; font-weight: 500; }
+.delete-corner { position: absolute; top: 10px; right: 10px; }
+.icon-btn { border: none; background: rgba(0,0,0,0.15); padding: 3px 8px; color: inherit; font-size: 13px; cursor: pointer; border-radius: 8px; opacity: 0.75; }
+.icon-btn:hover { background: rgba(0,0,0,0.3); opacity: 1; }
+
+.empty-hint { color: var(--ink-soft); font-size: 14px; }
+.back-link { background: none; border: none; padding: 0; margin-bottom: 1rem; cursor: pointer; color: var(--ink-soft); }
+.back-link:hover { color: var(--ink); border: none; }
+.activity-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.activity-title { font-weight: 600; font-size: 19px; margin: 0; }
+
+.list-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 0.25rem 1.25rem; }
+.list-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-top: 1px solid var(--border); gap: 8px; }
+.list-row:first-child { border-top: none; }
+.muted { color: var(--ink-soft); font-size: 13px; }
+.badge { font-size: 11px; padding: 3px 9px; border-radius: 20px; white-space: nowrap; font-weight: 500; }
+.prio-haute { background: var(--danger-bg); color: var(--danger-fg); }
+.prio-moyenne { background: var(--warn-bg); color: var(--warn-fg); }
+.prio-basse { background: var(--success-bg); color: var(--success-fg); }
+.agenda-link { margin-top: 1rem; }
+
+.month-nav-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.month-label { color: var(--ink); font-size: 15px; font-weight: 600; text-transform: capitalize; margin: 0; font-family: 'Space Grotesk', sans-serif; }
+.month-nav-btn { padding: 5px 12px; }
+.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.month-cell { aspect-ratio: 1; border: 1px solid var(--border); border-radius: 8px; padding: 5px; font-size: 12px; display: flex; flex-direction: column; justify-content: space-between; background: var(--surface); }
+.month-cell.clickable { cursor: pointer; }
+.month-cell.clickable:hover { border-color: var(--ink-faint); }
+.month-cell.selected { border: 2px solid var(--ink); }
+.cell-day { color: var(--ink-soft); }
+.cell-dots { display: flex; gap: 2px; flex-wrap: wrap; }
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+
+.day-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 0.85rem 1.25rem; margin-top: 1rem; }
+.day-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.day-panel-title { font-weight: 600; margin: 0; text-transform: capitalize; font-size: 15px; }
+
+.legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 0.9rem; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const CLIENT_ID = '107093933548-150t96kq8cbtdh35oukgl65pknaohn7m.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/calendar';
+const MARKER = 'mosaique-activity';
+const API_ROOT = 'https://www.googleapis.com/calendar/v3';
+
+const COLOR_CHOICES = [
+  { id: 'coral',   label: 'Corail',    hex: '#F0553F', text: '#FFFFFF' },
+  { id: 'teal',    label: 'Émeraude',  hex: '#0EA89F', text: '#FFFFFF' },
+  { id: 'amber',   label: 'Ambre',     hex: '#F2A93B', text: '#241A05' },
+  { id: 'violet',  label: 'Violet',    hex: '#8B5CF6', text: '#FFFFFF' },
+  { id: 'magenta', label: 'Magenta',   hex: '#E1408F', text: '#FFFFFF' },
+  { id: 'sky',     label: 'Bleu ciel', hex: '#3E8EF7', text: '#FFFFFF' },
+];
+
+let accessToken = null;
+let tokenClient = null;
+let data = { activities: [] };
+const state = { view: 'dashboard', activityId: null, showForm: false, showActivityForm: false, calYear: null, calMonth: null, selectedDay: null, loading: false, error: null, authReady: false };
+const root = document.getElementById('root');
+
+// --- Utils ---
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function formatShortDate(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+function priorityLabel(p) {
+  if (p === 'haute') return { label: 'Haute', cls: 'prio-haute' };
+  if (p === 'basse') return { label: 'Basse', cls: 'prio-basse' };
+  return { label: 'Moyenne', cls: 'prio-moyenne' };
+}
+function buildMonthCells(year, month, eventsByDay) {
+  const first = new Date(year, month - 1, 1);
+  const startDow = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    cells.push({ day: d, dots: eventsByDay[key] || [] });
+  }
+  return cells;
+}
+
+// --- Google Calendar API calls ---
+async function gfetch(path, options = {}) {
+  const res = await fetch(`${API_ROOT}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Erreur Google Calendar (${res.status}) : ${text.slice(0, 200)}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+async function fetchActivities() {
+  const list = await gfetch('/users/me/calendarList');
+  return (list.items || [])
+    .filter(c => (c.description || '').startsWith(MARKER))
+    .map(c => {
+      const sub = (c.description || '').split('|')[1] || '';
+      return { id: c.id, name: c.summaryOverride || c.summary, sub, hex: c.backgroundColor || '#888780', text: c.foregroundColor || '#FFFFFF', events: [] };
+    });
+}
+
+async function fetchEventsFor(calendarId) {
+  const timeMin = new Date();
+  timeMin.setMonth(timeMin.getMonth() - 1);
+  const timeMax = new Date();
+  timeMax.setMonth(timeMax.getMonth() + 6);
+  const params = new URLSearchParams({
+    timeMin: timeMin.toISOString(),
+    timeMax: timeMax.toISOString(),
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: '100',
+  });
+  const res = await gfetch(`/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`);
+  return (res.items || []).map(ev => {
+    const dt = ev.start.dateTime || `${ev.start.date}T00:00:00`;
+    const d = new Date(dt);
+    const date = dt.slice(0, 10);
+    const time = ev.start.dateTime ? dt.slice(11, 16) : '00:00';
+    const priority = (ev.extendedProperties && ev.extendedProperties.private && ev.extendedProperties.private.priority) || 'moyenne';
+    return { id: ev.id, title: ev.summary || '(sans titre)', date, time, priority, recurring: !!ev.recurringEventId };
+  });
+}
+
+async function loadAll() {
+  state.loading = true; state.error = null; render();
+  try {
+    const activities = await fetchActivities();
+    for (const a of activities) {
+      a.events = await fetchEventsFor(a.id);
+    }
+    data.activities = activities;
+  } catch (e) {
+    state.error = e.message;
+  } finally {
+    state.loading = false;
+    render();
+  }
+}
+
+async function createActivity({ name, sub, colorId }) {
+  const choice = COLOR_CHOICES.find(c => c.id === colorId) || COLOR_CHOICES[0];
+  const created = await gfetch('/calendars', {
+    method: 'POST',
+    body: JSON.stringify({ summary: name, description: `${MARKER}|${sub || ''}` }),
+  });
+  await gfetch(`/users/me/calendarList/${encodeURIComponent(created.id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ colorRgbFormat: true, backgroundColor: choice.hex, foregroundColor: choice.text }),
+  });
+  await loadAll();
+}
+
+async function createEvent(activityId, { title, date, time, priority, freq, until }) {
+  const startDateTime = `${date}T${time}:00`;
+  const [h, m] = time.split(':').map(Number);
+  const endTotal = h * 60 + m + 30;
+  const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}`;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const body = {
+    summary: title,
+    start: { dateTime: startDateTime, timeZone },
+    end: { dateTime: `${date}T${endTime}:00`, timeZone },
+    extendedProperties: { private: { priority } },
+  };
+  if (freq && until) {
+    const untilStr = until.replace(/-/g, '') + 'T235959Z';
+    body.recurrence = [`RRULE:FREQ=${freq};UNTIL=${untilStr}`];
+  }
+  await gfetch(`/calendars/${encodeURIComponent(activityId)}/events`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  await loadAll();
+}
+
+async function deleteActivity(activityId) {
+  await gfetch(`/calendars/${encodeURIComponent(activityId)}`, { method: 'DELETE' });
+  await loadAll();
+}
+
+async function deleteEvent(activityId, eventId) {
+  await gfetch(`/calendars/${encodeURIComponent(activityId)}/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' });
+  await loadAll();
+}
+
+// --- Rendering ---
+function renderMonthGrid(year, month, eventsByDay) {
+  const cells = buildMonthCells(year, month, eventsByDay);
+  const label = new Date(year, month - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const cellsHtml = cells.map(c => {
+    if (!c) return `<div></div>`;
+    const key = `${year}-${String(month).padStart(2, '0')}-${String(c.day).padStart(2, '0')}`;
+    const clickable = c.dots.length > 0;
+    const selected = state.selectedDay === key;
+    return `<div class="month-cell${clickable ? ' clickable' : ''}${selected ? ' selected' : ''}" ${clickable ? `data-day="${key}"` : ''}>
+      <span class="cell-day">${c.day}</span>
+      <div class="cell-dots">${c.dots.map(color => `<span class="dot" style="background:${color}"></span>`).join('')}</div>
+    </div>`;
+  }).join('');
+  return `<div class="month-nav-row">
+      <button class="month-nav-btn" data-cal-prev="1">&larr;</button>
+      <p class="month-label">${label}</p>
+      <button class="month-nav-btn" data-cal-next="1">&rarr;</button>
+    </div>
+    <div class="month-grid">${cellsHtml}</div>`;
+}
+
+function nav(active) {
+  return `<div class="nav-row">
+    <button data-nav="dashboard" class="${active === 'dashboard' ? 'active' : ''}">Mes activités</button>
+    <button data-nav="general" class="${active === 'general' ? 'active' : ''}">Calendrier général</button>
+  </div>`;
+}
+
+function renderActivityForm() {
+  const opts = COLOR_CHOICES.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
+  return `<div class="panel">
+    <p class="panel-title">Nouvelle activité</p>
+    <input id="na-name" type="text" placeholder="Nom de l'activité" />
+    <input id="na-sub" type="text" placeholder="Sous-titre (optionnel)" />
+    <select id="na-color">${opts}</select>
+    <p id="na-error" class="field-error" style="display:none;">Indique un nom pour cette activité.</p>
+    <div class="row-gap">
+      <button class="primary" data-save-activity="1">Créer l'activité</button>
+      <button data-cancel-activity-form="1">Annuler</button>
+    </div>
+  </div>`;
+}
+
+function renderDashboard() {
+  const today = todayISO();
+  const cards = data.activities.map(a => {
+    const upcoming = a.events.filter(e => e.date >= today).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+    const next = upcoming[0];
+    return `<div class="block-card" style="background:${a.hex}; color:${a.text};" data-activity="${a.id}">
+      <button class="icon-btn delete-corner" data-delete-activity="${a.id}" title="Supprimer l'activité">&#10005;</button>
+      <p class="block-name">${a.name}</p>
+      ${a.sub ? `<p class="block-sub">${a.sub}</p>` : ''}
+      <p class="block-count">${upcoming.length} événement(s) à venir</p>
+      ${next ? `<p class="block-next">Prochain : ${formatShortDate(next.date)} · ${next.time}</p>` : ''}
+    </div>`;
+  }).join('');
+
+  return `${nav('dashboard')}
+    <div class="row-end"><button data-toggle-activity-form="1">+ Nouvelle activité</button></div>
+    ${state.showActivityForm ? renderActivityForm() : ''}
+    ${data.activities.length === 0 && !state.showActivityForm ? `<p class="empty-hint">Aucune activité pour l'instant. Crée-en une pour commencer.</p>` : ''}
+    <div class="card-grid">${cards}</div>`;
+}
+
+function renderForm(activity) {
+  return `<div class="panel">
+    <p class="panel-title">Nouvel événement — ${activity.name}</p>
+    <input id="f-title" type="text" placeholder="Titre de l'événement" />
+    <div class="row-gap">
+      <input id="f-date" type="date" value="${todayISO()}" />
+      <input id="f-time" type="time" value="09:00" />
+    </div>
+    <select id="f-priority">
+      <option value="basse">Priorité basse</option>
+      <option value="moyenne" selected>Priorité moyenne</option>
+      <option value="haute">Priorité haute</option>
+    </select>
+    <label class="checkbox-row" style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft);">
+      <input id="f-recurring" type="checkbox" style="width:auto;" /> Cet événement se répète
+    </label>
+    <div id="f-recurrence-fields" style="display:none; flex-direction:column; gap:8px;">
+      <select id="f-freq">
+        <option value="DAILY">Tous les jours</option>
+        <option value="WEEKLY" selected>Toutes les semaines</option>
+        <option value="MONTHLY">Tous les mois</option>
+      </select>
+      <div>
+        <label style="font-size:12px; color:var(--ink-soft);">Jusqu'au</label>
+        <input id="f-until" type="date" value="${(() => { const d = new Date(); d.setMonth(d.getMonth() + 3); return d.toISOString().slice(0,10); })()}" />
+      </div>
+    </div>
+    <p id="f-error" class="field-error" style="display:none;">Merci d'indiquer un titre et une date.</p>
+    <div class="row-gap">
+      <button class="primary" data-save-event="${activity.id}">Enregistrer</button>
+      <button data-cancel-form="1">Annuler</button>
+    </div>
+  </div>`;
+}
+
+function renderActivity(id) {
+  const a = data.activities.find(x => x.id === id);
+  const today = todayISO();
+  const upcoming = a.events.filter(e => e.date >= today).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  const rows = upcoming.map(e => {
+    const prio = priorityLabel(e.priority);
+    return `<div class="list-row"><span>${e.recurring ? '&#128257; ' : ''}${e.title}</span>
+      <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${formatShortDate(e.date)} · ${e.time}</span>
+        <button class="icon-btn" data-delete-event="${a.id}:${e.id}" title="Supprimer l'événement">&#10005;</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<button class="back-link" data-nav="dashboard">&larr; Toutes les activités</button>
+    <div class="activity-header">
+      <p class="activity-title">${a.name}</p>
+      <button data-toggle-form="${a.id}">+ Ajouter</button>
+    </div>
+    ${state.showForm ? renderForm(a) : ''}
+    <div class="list-panel">${rows || '<p class="empty-hint" style="padding:10px 0;">Aucun événement à venir.</p>'}</div>
+    <button class="agenda-link" data-agenda="${a.id}">Voir l'agenda de cette activité</button>`;
+}
+
+function renderAgenda(id) {
+  const a = data.activities.find(x => x.id === id);
+  if (state.calYear === null) { const n = new Date(); state.calYear = n.getFullYear(); state.calMonth = n.getMonth() + 1; }
+  const eventsByDay = {};
+  a.events.forEach(e => { eventsByDay[e.date] = eventsByDay[e.date] || []; eventsByDay[e.date].push(a.hex); });
+  return `<button class="back-link" data-nav-activity="${a.id}">&larr; ${a.name}</button>
+    ${renderMonthGrid(state.calYear, state.calMonth, eventsByDay)}`;
+}
+
+function renderGeneral() {
+  if (state.calYear === null) { const n = new Date(); state.calYear = n.getFullYear(); state.calMonth = n.getMonth() + 1; }
+  const today = todayISO();
+  const eventsByDay = {};
+  const allEvents = [];
+  data.activities.forEach(a => {
+    a.events.forEach(e => {
+      eventsByDay[e.date] = eventsByDay[e.date] || [];
+      eventsByDay[e.date].push(a.hex);
+      allEvents.push({ ...e, activityName: a.name });
+    });
+  });
+  const upcoming = allEvents.filter(e => e.date >= today).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  const legend = data.activities.map(a => `<span class="legend-item"><span class="dot" style="background:${a.hex}"></span>${a.name}</span>`).join('');
+  const rows = upcoming.map(e => {
+    const prio = priorityLabel(e.priority);
+    return `<div class="list-row"><span>${e.title}</span>
+      <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${formatShortDate(e.date)} · ${e.time} · ${e.activityName}</span></div>
+    </div>`;
+  }).join('');
+
+  let dayPanel = '';
+  if (state.selectedDay) {
+    const dayEvents = allEvents.filter(e => e.date === state.selectedDay).sort((x, y) => x.time.localeCompare(y.time));
+    const dayLabel = formatShortDate(state.selectedDay);
+    const dayRows = dayEvents.map(e => {
+      const prio = priorityLabel(e.priority);
+      return `<div class="list-row"><span>${e.title}</span>
+        <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${e.time} · ${e.activityName}</span></div>
+      </div>`;
+    }).join('');
+    dayPanel = `<div class="day-panel">
+      <div class="day-panel-header">
+        <p class="day-panel-title">${dayLabel}</p>
+        <button class="icon-btn" data-close-day="1" title="Fermer">&#10005;</button>
+      </div>
+      ${dayRows || '<p class="empty-hint" style="padding:6px 0;">Aucun événement ce jour-là.</p>'}
+    </div>`;
+  }
+
+  return `${nav('general')}
+    <div class="legend-row">${legend}</div>
+    ${renderMonthGrid(state.calYear, state.calMonth, eventsByDay)}
+    ${dayPanel}
+    <div class="list-panel" style="margin-top:1.25rem;">${rows || '<p class="empty-hint" style="padding:10px 0;">Aucun événement à venir.</p>'}</div>`;
+}
+
+function render() {
+  const tiles = COLOR_CHOICES.slice(0, 4).map(c => `<span style="background:${c.hex}"></span>`).join('');
+  const header = `<div class="app-header"><div class="brand-row"><div class="brand-tiles">${tiles}</div><p class="brand">Mosaïque</p></div>
+    ${accessToken ? `<button data-logout="1">Se déconnecter</button>` : ''}
+  </div>`;
+
+  if (!accessToken) {
+    root.innerHTML = `<div class="app-shell">${header}
+      <div class="login-screen">
+        <p>Connecte-toi avec ton compte Google pour retrouver tes activités.</p>
+        <button class="primary" data-login="1" ${state.authReady ? '' : 'disabled'}>${state.authReady ? 'Se connecter avec Google' : 'Chargement…'}</button>
+      </div>
+    </div>`;
+    attach();
+    return;
+  }
+
+  if (state.loading && data.activities.length === 0) {
+    root.innerHTML = `<div class="app-shell">${header}<p class="status-message">Chargement de tes activités…</p></div>`;
+    return;
+  }
+
+  if (state.error) {
+    root.innerHTML = `<div class="app-shell">${header}<div class="status-message error"><p>${state.error}</p><button data-retry="1">Réessayer</button></div></div>`;
+    attach();
+    return;
+  }
+
+  let html = `<div class="app-shell">${header}`;
+  if (state.view === 'dashboard') html += renderDashboard();
+  else if (state.view === 'activity') html += renderActivity(state.activityId);
+  else if (state.view === 'agenda') html += renderAgenda(state.activityId);
+  else if (state.view === 'general') html += renderGeneral();
+  html += '</div>';
+  root.innerHTML = html;
+  attach();
+}
+
+function attach() {
+  const el1 = root.querySelector('[data-login]');
+  if (el1) el1.onclick = () => tokenClient.requestAccessToken({ prompt: '' });
+  const el2 = root.querySelector('[data-logout]');
+  if (el2) el2.onclick = () => {
+    if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
+    accessToken = null;
+    data.activities = [];
+    render();
+  };
+  const el3 = root.querySelector('[data-retry]');
+  if (el3) el3.onclick = () => loadAll();
+
+  root.querySelectorAll('[data-activity]').forEach(el => el.onclick = () => { state.view = 'activity'; state.activityId = el.dataset.activity; state.showForm = false; render(); });
+  root.querySelectorAll('[data-nav]').forEach(el => el.onclick = () => { state.view = el.dataset.nav; state.showForm = false; state.showActivityForm = false; state.calYear = null; state.calMonth = null; state.selectedDay = null; render(); });
+  root.querySelectorAll('[data-agenda]').forEach(el => el.onclick = () => { state.view = 'agenda'; state.activityId = el.dataset.agenda; state.calYear = null; state.calMonth = null; state.selectedDay = null; render(); });
+  root.querySelectorAll('[data-nav-activity]').forEach(el => el.onclick = () => { state.view = 'activity'; state.activityId = el.dataset.navActivity; state.showForm = false; render(); });
+  root.querySelectorAll('[data-toggle-form]').forEach(el => el.onclick = () => { state.showForm = !state.showForm; render(); });
+  root.querySelectorAll('[data-cancel-form]').forEach(el => el.onclick = () => { state.showForm = false; render(); });
+  const recurCheckbox = root.querySelector('#f-recurring');
+  if (recurCheckbox) recurCheckbox.onchange = () => {
+    document.getElementById('f-recurrence-fields').style.display = recurCheckbox.checked ? 'flex' : 'none';
+  };
+  root.querySelectorAll('[data-toggle-activity-form]').forEach(el => el.onclick = () => { state.showActivityForm = !state.showActivityForm; render(); });
+  root.querySelectorAll('[data-cancel-activity-form]').forEach(el => el.onclick = () => { state.showActivityForm = false; render(); });
+
+  root.querySelectorAll('[data-day]').forEach(el => el.onclick = () => {
+    const day = el.dataset.day;
+    state.selectedDay = state.selectedDay === day ? null : day;
+    render();
+  });
+  root.querySelectorAll('[data-close-day]').forEach(el => el.onclick = () => { state.selectedDay = null; render(); });
+
+  root.querySelectorAll('[data-cal-prev]').forEach(el => el.onclick = () => {
+    state.calMonth -= 1;
+    if (state.calMonth < 1) { state.calMonth = 12; state.calYear -= 1; }
+    state.selectedDay = null;
+    render();
+  });
+  root.querySelectorAll('[data-cal-next]').forEach(el => el.onclick = () => {
+    state.calMonth += 1;
+    if (state.calMonth > 12) { state.calMonth = 1; state.calYear += 1; }
+    state.selectedDay = null;
+    render();
+  });
+
+  root.querySelectorAll('[data-delete-activity]').forEach(el => el.onclick = async (ev) => {
+    ev.stopPropagation();
+    const id = el.dataset.deleteActivity;
+    const a = data.activities.find(x => x.id === id);
+    if (!confirm(`Supprimer l'activité "${a.name}" et tous ses événements ?`)) return;
+    try { await deleteActivity(id); } catch (e) { state.error = e.message; render(); }
+  });
+
+  root.querySelectorAll('[data-delete-event]').forEach(el => el.onclick = async (ev) => {
+    ev.stopPropagation();
+    const [activityId, eventId] = el.dataset.deleteEvent.split(':');
+    const activity = data.activities.find(x => x.id === activityId);
+    const evObj = activity && activity.events.find(x => x.id === eventId);
+    const msg = evObj && evObj.recurring
+      ? `Cet événement fait partie d'une série qui se répète. Supprimer seulement cette occurrence (les autres dates ne sont pas touchées) ?`
+      : `Supprimer cet événement ?`;
+    if (!confirm(msg)) return;
+    try { await deleteEvent(activityId, eventId); } catch (e) { state.error = e.message; render(); }
+  });
+
+  root.querySelectorAll('[data-save-event]').forEach(el => el.onclick = async () => {
+    const id = el.dataset.saveEvent;
+    const title = document.getElementById('f-title').value.trim();
+    const date = document.getElementById('f-date').value;
+    const time = document.getElementById('f-time').value || '09:00';
+    const priority = document.getElementById('f-priority').value;
+    const isRecurring = document.getElementById('f-recurring').checked;
+    const freq = isRecurring ? document.getElementById('f-freq').value : null;
+    const until = isRecurring ? document.getElementById('f-until').value : null;
+    const err = document.getElementById('f-error');
+    if (!title || !date) { err.style.display = 'block'; return; }
+    el.disabled = true;
+    try {
+      await createEvent(id, { title, date, time, priority, freq, until });
+      state.view = 'activity'; state.activityId = id; state.showForm = false;
+      render();
+    } catch (e) { state.error = e.message; render(); }
+  });
+
+  root.querySelectorAll('[data-save-activity]').forEach(el => el.onclick = async () => {
+    const name = document.getElementById('na-name').value.trim();
+    const sub = document.getElementById('na-sub').value.trim();
+    const colorId = document.getElementById('na-color').value;
+    const err = document.getElementById('na-error');
+    if (!name) { err.style.display = 'block'; return; }
+    el.disabled = true;
+    try {
+      await createActivity({ name, sub, colorId });
+      state.showActivityForm = false;
+      render();
+    } catch (e) { state.error = e.message; render(); }
+  });
+}
+
+function initAuth() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: (response) => {
+      if (response.error) { state.error = 'Connexion refusée ou annulée.'; render(); return; }
+      accessToken = response.access_token;
+      loadAll();
+    },
+  });
+  state.authReady = true;
+  render();
+}
+
+window.onload = () => {
+  // google script loads async; poll briefly until it's ready
+  const check = setInterval(() => {
+    if (window.google && google.accounts && google.accounts.oauth2) {
+      clearInterval(check);
+      initAuth();
+    }
+  }, 100);
+  render();
+};
+</script>
+</body>
+</html>
