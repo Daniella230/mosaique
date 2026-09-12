@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Mosaïque — mon agenda</title>
+<title>Mosaïque</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -332,7 +332,7 @@ function renderForm(activity) {
     <p class="panel-title">Nouvel événement — ${activity.name}</p>
     <input id="f-title" type="text" placeholder="Titre de l'événement" />
     <div class="row-gap">
-      <input id="f-date" type="date" value="${todayISO()}" />
+      <input id="f-date" type="date" value="${todayISO()}" min="${todayISO()}" />
       <input id="f-time" type="time" value="09:00" />
     </div>
     <select id="f-priority">
@@ -555,7 +555,8 @@ function attach() {
     const freq = isRecurring ? document.getElementById('f-freq').value : null;
     const until = isRecurring ? document.getElementById('f-until').value : null;
     const err = document.getElementById('f-error');
-    if (!title || !date) { err.style.display = 'block'; return; }
+    if (!title || !date) { err.textContent = "Merci d'indiquer un titre et une date."; err.style.display = 'block'; return; }
+    if (date < todayISO()) { err.textContent = "Impossible de créer un événement à une date déjà passée."; err.style.display = 'block'; return; }
     el.disabled = true;
     try {
       await createEvent(id, { title, date, time, priority, freq, until });
