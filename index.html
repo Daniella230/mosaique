@@ -64,6 +64,7 @@ input::placeholder { color: var(--ink-faint); }
 .block-count { font-size: 13px; opacity: 0.85; margin: 10px 0 0; }
 .block-next { font-size: 13px; margin: 3px 0 0; font-weight: 500; }
 .delete-corner { position: absolute; top: 10px; right: 10px; }
+.edit-corner { position: absolute; top: 10px; right: 42px; }
 .icon-btn { border: none; background: rgba(0,0,0,0.15); padding: 3px 8px; color: inherit; font-size: 13px; cursor: pointer; border-radius: 8px; opacity: 0.75; }
 .icon-btn:hover { background: rgba(0,0,0,0.3); opacity: 1; }
 
@@ -74,7 +75,8 @@ input::placeholder { color: var(--ink-faint); }
 .activity-title { font-weight: 600; font-size: 19px; margin: 0; }
 
 .list-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 0.25rem 1.25rem; }
-.list-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-top: 1px solid var(--border); gap: 8px; }
+.list-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-top: 1px solid var(--border); gap: 8px; cursor: pointer; }
+.list-row:hover { background: var(--surface-2); margin: 0 -1.25rem; padding: 11px 1.25rem; }
 .list-row:first-child { border-top: none; }
 .muted { color: var(--ink-soft); font-size: 13px; }
 .badge { font-size: 11px; padding: 3px 9px; border-radius: 20px; white-space: nowrap; font-weight: 500; }
@@ -123,7 +125,7 @@ const COLOR_CHOICES = [
 let accessToken = null;
 let tokenClient = null;
 let data = { activities: [] };
-const state = { view: 'dashboard', activityId: null, showForm: false, showActivityForm: false, calYear: null, calMonth: null, selectedDay: null, loading: false, error: null, authReady: false };
+const state = { view: 'dashboard', activityId: null, showForm: false, showActivityForm: false, calYear: null, calMonth: null, selectedDay: null, loading: false, error: null, authReady: false, editing: null, editingActivity: null };
 const root = document.getElementById('root');
 
 // --- Utils ---
@@ -216,6 +218,12 @@ async function loadAll() {
   }
 }
 
+function remindersForPriority(priority) {
+  if (priority === 'haute') return { useDefault: false, overrides: [{ method: 'popup', minutes: 24 * 60 }, { method: 'popup', minutes: 30 }] };
+  if (priority === 'basse') return { useDefault: false, overrides: [{ method: 'popup', minutes: 10 }] };
+  return { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] };
+}
+
 async function createActivity({ name, sub, colorId }) {
   const choice = COLOR_CHOICES.find(c => c.id === colorId) || COLOR_CHOICES[0];
   const created = await gfetch('/calendars', {
@@ -240,6 +248,7 @@ async function createEvent(activityId, { title, date, time, priority, freq, unti
     start: { dateTime: startDateTime, timeZone },
     end: { dateTime: `${date}T${endTime}:00`, timeZone },
     extendedProperties: { private: { priority } },
+    reminders: remindersForPriority(priority),
   };
   if (freq && until) {
     const untilStr = until.replace(/-/g, '') + 'T235959Z';
@@ -248,6 +257,38 @@ async function createEvent(activityId, { title, date, time, priority, freq, unti
   await gfetch(`/calendars/${encodeURIComponent(activityId)}/events`, {
     method: 'POST',
     body: JSON.stringify(body),
+  });
+  await loadAll();
+}
+
+async function updateEvent(activityId, eventId, { title, date, time, priority }) {
+  const startDateTime = `${date}T${time}:00`;
+  const [h, m] = time.split(':').map(Number);
+  const endTotal = h * 60 + m + 30;
+  const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}`;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  await gfetch(`/calendars/${encodeURIComponent(activityId)}/events/${encodeURIComponent(eventId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      summary: title,
+      start: { dateTime: startDateTime, timeZone },
+      end: { dateTime: `${date}T${endTime}:00`, timeZone },
+      extendedProperties: { private: { priority } },
+      reminders: remindersForPriority(priority),
+    }),
+  });
+  await loadAll();
+}
+
+async function updateActivity(activityId, { name, sub, colorId }) {
+  const choice = COLOR_CHOICES.find(c => c.id === colorId) || COLOR_CHOICES[0];
+  await gfetch(`/calendars/${encodeURIComponent(activityId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ summary: name, description: `${MARKER}|${sub || ''}` }),
+  });
+  await gfetch(`/users/me/calendarList/${encodeURIComponent(activityId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ colorRgbFormat: true, backgroundColor: choice.hex, foregroundColor: choice.text }),
   });
   await loadAll();
 }
@@ -306,12 +347,34 @@ function renderActivityForm() {
   </div>`;
 }
 
+function renderActivityEditForm() {
+  const s = state.editingActivity;
+  const opts = COLOR_CHOICES.map(c => `<option value="${c.id}" ${s.colorId === c.id ? 'selected' : ''}>${c.label}</option>`).join('');
+  return `<div class="panel">
+    <p class="panel-title">Modifier l'activité</p>
+    <input id="ea-name" type="text" value="${escapeAttr(s.name)}" />
+    <input id="ea-sub" type="text" value="${escapeAttr(s.sub || '')}" placeholder="Sous-titre (optionnel)" />
+    <select id="ea-color">${opts}</select>
+    <p id="ea-error" class="field-error" style="display:none;">Indique un nom pour cette activité.</p>
+    <div class="row-gap">
+      <button class="primary" data-save-activity-edit="${s.id}">Enregistrer les modifications</button>
+      <button data-cancel-activity-edit="1">Annuler</button>
+    </div>
+  </div>`;
+}
+
+function colorIdFromHex(hex) {
+  const found = COLOR_CHOICES.find(c => c.hex.toLowerCase() === (hex || '').toLowerCase());
+  return found ? found.id : COLOR_CHOICES[0].id;
+}
+
 function renderDashboard() {
   const today = todayISO();
   const cards = data.activities.map(a => {
     const upcoming = a.events.filter(e => e.date >= today).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
     const next = upcoming[0];
     return `<div class="block-card" style="background:${a.hex}; color:${a.text};" data-activity="${a.id}">
+      <button class="icon-btn edit-corner" data-edit-activity="${a.id}" title="Modifier l'activité">&#9998;</button>
       <button class="icon-btn delete-corner" data-delete-activity="${a.id}" title="Supprimer l'activité">&#10005;</button>
       <p class="block-name">${a.name}</p>
       ${a.sub ? `<p class="block-sub">${a.sub}</p>` : ''}
@@ -322,7 +385,7 @@ function renderDashboard() {
 
   return `${nav('dashboard')}
     <div class="row-end"><button data-toggle-activity-form="1">+ Nouvelle activité</button></div>
-    ${state.showActivityForm ? renderActivityForm() : ''}
+    ${state.editingActivity ? renderActivityEditForm() : (state.showActivityForm ? renderActivityForm() : '')}
     ${data.activities.length === 0 && !state.showActivityForm ? `<p class="empty-hint">Aucune activité pour l'instant. Crée-en une pour commencer.</p>` : ''}
     <div class="card-grid">${cards}</div>`;
 }
@@ -362,13 +425,39 @@ function renderForm(activity) {
   </div>`;
 }
 
+function escapeAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function renderEditPanel() {
+  const e = state.editing;
+  return `<div class="panel">
+    <p class="panel-title">Modifier l'événement</p>
+    <input id="ef-title" type="text" value="${escapeAttr(e.title)}" />
+    <div class="row-gap">
+      <input id="ef-date" type="date" value="${e.date}" min="${todayISO()}" />
+      <input id="ef-time" type="time" value="${e.time}" />
+    </div>
+    <select id="ef-priority">
+      <option value="basse" ${e.priority === 'basse' ? 'selected' : ''}>Priorité basse</option>
+      <option value="moyenne" ${e.priority === 'moyenne' ? 'selected' : ''}>Priorité moyenne</option>
+      <option value="haute" ${e.priority === 'haute' ? 'selected' : ''}>Priorité haute</option>
+    </select>
+    <p id="ef-error" class="field-error" style="display:none;">Merci d'indiquer un titre et une date.</p>
+    <div class="row-gap">
+      <button class="primary" data-save-edit="1">Enregistrer les modifications</button>
+      <button data-cancel-edit="1">Annuler</button>
+    </div>
+  </div>`;
+}
+
 function renderActivity(id) {
   const a = data.activities.find(x => x.id === id);
   const today = todayISO();
   const upcoming = a.events.filter(e => e.date >= today).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
   const rows = upcoming.map(e => {
     const prio = priorityLabel(e.priority);
-    return `<div class="list-row"><span>${e.recurring ? '&#128257; ' : ''}${e.title}</span>
+    return `<div class="list-row" data-edit-event="${a.id}:${e.id}"><span>${e.recurring ? '&#128257; ' : ''}${e.title}</span>
       <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${formatShortDate(e.date)} · ${e.time}</span>
         <button class="icon-btn" data-delete-event="${a.id}:${e.id}" title="Supprimer l'événement">&#10005;</button>
       </div>
@@ -380,7 +469,7 @@ function renderActivity(id) {
       <p class="activity-title">${a.name}</p>
       <button data-toggle-form="${a.id}">+ Ajouter</button>
     </div>
-    ${state.showForm ? renderForm(a) : ''}
+    ${state.editing ? renderEditPanel() : (state.showForm ? renderForm(a) : '')}
     <div class="list-panel">${rows || '<p class="empty-hint" style="padding:10px 0;">Aucun événement à venir.</p>'}</div>
     <button class="agenda-link" data-agenda="${a.id}">Voir l'agenda de cette activité</button>`;
 }
@@ -390,28 +479,42 @@ function renderAgenda(id) {
   if (state.calYear === null) { const n = new Date(); state.calYear = n.getFullYear(); state.calMonth = n.getMonth() + 1; }
   const eventsByDay = {};
   a.events.forEach(e => { eventsByDay[e.date] = eventsByDay[e.date] || []; eventsByDay[e.date].push(a.hex); });
+  const monthPrefix = `${state.calYear}-${String(state.calMonth).padStart(2, '0')}`;
+  const monthEvents = a.events.filter(e => e.date.startsWith(monthPrefix)).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  const rows = monthEvents.map(e => {
+    const prio = priorityLabel(e.priority);
+    return `<div class="list-row" data-edit-event="${a.id}:${e.id}"><span>${e.recurring ? '&#128257; ' : ''}${e.title}</span>
+      <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${formatShortDate(e.date)} · ${e.time}</span>
+        <button class="icon-btn" data-delete-event="${a.id}:${e.id}" title="Supprimer l'événement">&#10005;</button>
+      </div>
+    </div>`;
+  }).join('');
   return `<button class="back-link" data-nav-activity="${a.id}">&larr; ${a.name}</button>
-    ${renderMonthGrid(state.calYear, state.calMonth, eventsByDay)}`;
+    ${state.editing ? renderEditPanel() : ''}
+    ${renderMonthGrid(state.calYear, state.calMonth, eventsByDay)}
+    <div class="list-panel" style="margin-top:1.25rem;">${rows || '<p class="empty-hint" style="padding:10px 0;">Aucun événement ce mois-ci.</p>'}</div>`;
 }
 
 function renderGeneral() {
   if (state.calYear === null) { const n = new Date(); state.calYear = n.getFullYear(); state.calMonth = n.getMonth() + 1; }
-  const today = todayISO();
   const eventsByDay = {};
   const allEvents = [];
   data.activities.forEach(a => {
     a.events.forEach(e => {
       eventsByDay[e.date] = eventsByDay[e.date] || [];
       eventsByDay[e.date].push(a.hex);
-      allEvents.push({ ...e, activityName: a.name });
+      allEvents.push({ ...e, activityId: a.id, activityName: a.name });
     });
   });
-  const upcoming = allEvents.filter(e => e.date >= today).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  const monthPrefix = `${state.calYear}-${String(state.calMonth).padStart(2, '0')}`;
+  const monthEvents = allEvents.filter(e => e.date.startsWith(monthPrefix)).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
   const legend = data.activities.map(a => `<span class="legend-item"><span class="dot" style="background:${a.hex}"></span>${a.name}</span>`).join('');
-  const rows = upcoming.map(e => {
+  const rows = monthEvents.map(e => {
     const prio = priorityLabel(e.priority);
-    return `<div class="list-row"><span>${e.title}</span>
-      <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${formatShortDate(e.date)} · ${e.time} · ${e.activityName}</span></div>
+    return `<div class="list-row" data-edit-event="${e.activityId}:${e.id}"><span>${e.recurring ? '&#128257; ' : ''}${e.title}</span>
+      <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${formatShortDate(e.date)} · ${e.time} · ${e.activityName}</span>
+        <button class="icon-btn" data-delete-event="${e.activityId}:${e.id}" title="Supprimer l'événement">&#10005;</button>
+      </div>
     </div>`;
   }).join('');
 
@@ -421,8 +524,10 @@ function renderGeneral() {
     const dayLabel = formatShortDate(state.selectedDay);
     const dayRows = dayEvents.map(e => {
       const prio = priorityLabel(e.priority);
-      return `<div class="list-row"><span>${e.title}</span>
-        <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${e.time} · ${e.activityName}</span></div>
+      return `<div class="list-row" data-edit-event="${e.activityId}:${e.id}"><span>${e.title}</span>
+        <div class="row-gap-sm"><span class="badge ${prio.cls}">${prio.label}</span><span class="muted">${e.time} · ${e.activityName}</span>
+          <button class="icon-btn" data-delete-event="${e.activityId}:${e.id}" title="Supprimer l'événement">&#10005;</button>
+        </div>
       </div>`;
     }).join('');
     dayPanel = `<div class="day-panel">
@@ -436,6 +541,7 @@ function renderGeneral() {
 
   return `${nav('general')}
     <div class="legend-row">${legend}</div>
+    ${state.editing ? renderEditPanel() : ''}
     ${renderMonthGrid(state.calYear, state.calMonth, eventsByDay)}
     ${dayPanel}
     <div class="list-panel" style="margin-top:1.25rem;">${rows || '<p class="empty-hint" style="padding:10px 0;">Aucun événement à venir.</p>'}</div>`;
@@ -492,10 +598,10 @@ function attach() {
   const el3 = root.querySelector('[data-retry]');
   if (el3) el3.onclick = () => loadAll();
 
-  root.querySelectorAll('[data-activity]').forEach(el => el.onclick = () => { state.view = 'activity'; state.activityId = el.dataset.activity; state.showForm = false; render(); });
-  root.querySelectorAll('[data-nav]').forEach(el => el.onclick = () => { state.view = el.dataset.nav; state.showForm = false; state.showActivityForm = false; state.calYear = null; state.calMonth = null; state.selectedDay = null; render(); });
-  root.querySelectorAll('[data-agenda]').forEach(el => el.onclick = () => { state.view = 'agenda'; state.activityId = el.dataset.agenda; state.calYear = null; state.calMonth = null; state.selectedDay = null; render(); });
-  root.querySelectorAll('[data-nav-activity]').forEach(el => el.onclick = () => { state.view = 'activity'; state.activityId = el.dataset.navActivity; state.showForm = false; render(); });
+  root.querySelectorAll('[data-activity]').forEach(el => el.onclick = () => { state.view = 'activity'; state.activityId = el.dataset.activity; state.showForm = false; state.editing = null; render(); });
+  root.querySelectorAll('[data-nav]').forEach(el => el.onclick = () => { state.view = el.dataset.nav; state.showForm = false; state.showActivityForm = false; state.calYear = null; state.calMonth = null; state.selectedDay = null; state.editing = null; state.editingActivity = null; render(); });
+  root.querySelectorAll('[data-agenda]').forEach(el => el.onclick = () => { state.view = 'agenda'; state.activityId = el.dataset.agenda; state.calYear = null; state.calMonth = null; state.selectedDay = null; state.editing = null; render(); });
+  root.querySelectorAll('[data-nav-activity]').forEach(el => el.onclick = () => { state.view = 'activity'; state.activityId = el.dataset.navActivity; state.showForm = false; state.editing = null; render(); });
   root.querySelectorAll('[data-toggle-form]').forEach(el => el.onclick = () => { state.showForm = !state.showForm; render(); });
   root.querySelectorAll('[data-cancel-form]').forEach(el => el.onclick = () => { state.showForm = false; render(); });
   const recurCheckbox = root.querySelector('#f-recurring');
@@ -523,6 +629,56 @@ function attach() {
     if (state.calMonth > 12) { state.calMonth = 1; state.calYear += 1; }
     state.selectedDay = null;
     render();
+  });
+
+  root.querySelectorAll('[data-edit-event]').forEach(el => el.onclick = () => {
+    const [activityId, eventId] = el.dataset.editEvent.split(':');
+    const activity = data.activities.find(x => x.id === activityId);
+    const ev = activity && activity.events.find(x => x.id === eventId);
+    if (!ev) return;
+    state.editing = { activityId, eventId, title: ev.title, date: ev.date, time: ev.time, priority: ev.priority };
+    state.showForm = false;
+    render();
+  });
+  root.querySelectorAll('[data-cancel-edit]').forEach(el => el.onclick = () => { state.editing = null; render(); });
+  root.querySelectorAll('[data-save-edit]').forEach(el => el.onclick = async () => {
+    const title = document.getElementById('ef-title').value.trim();
+    const date = document.getElementById('ef-date').value;
+    const time = document.getElementById('ef-time').value || '09:00';
+    const priority = document.getElementById('ef-priority').value;
+    const err = document.getElementById('ef-error');
+    if (!title || !date) { err.textContent = "Merci d'indiquer un titre et une date."; err.style.display = 'block'; return; }
+    el.disabled = true;
+    try {
+      await updateEvent(state.editing.activityId, state.editing.eventId, { title, date, time, priority });
+      state.editing = null;
+      render();
+    } catch (e) { state.error = e.message; render(); }
+  });
+
+  root.querySelectorAll('[data-edit-activity]').forEach(el => el.onclick = (ev) => {
+    ev.stopPropagation();
+    const id = el.dataset.editActivity;
+    const a = data.activities.find(x => x.id === id);
+    if (!a) return;
+    state.editingActivity = { id: a.id, name: a.name, sub: a.sub, colorId: colorIdFromHex(a.hex) };
+    state.showActivityForm = false;
+    render();
+  });
+  root.querySelectorAll('[data-cancel-activity-edit]').forEach(el => el.onclick = () => { state.editingActivity = null; render(); });
+  root.querySelectorAll('[data-save-activity-edit]').forEach(el => el.onclick = async () => {
+    const id = el.dataset.saveActivityEdit;
+    const name = document.getElementById('ea-name').value.trim();
+    const sub = document.getElementById('ea-sub').value.trim();
+    const colorId = document.getElementById('ea-color').value;
+    const err = document.getElementById('ea-error');
+    if (!name) { err.style.display = 'block'; return; }
+    el.disabled = true;
+    try {
+      await updateActivity(id, { name, sub, colorId });
+      state.editingActivity = null;
+      render();
+    } catch (e) { state.error = e.message; render(); }
   });
 
   root.querySelectorAll('[data-delete-activity]').forEach(el => el.onclick = async (ev) => {
